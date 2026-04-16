@@ -1,0 +1,344 @@
+MARCO MAESTRO
+SISTEMA DE AUDITORÍA METABÓLICA
+(SAM)
+Versión 1.4 Consolidada
+Abril 2026
+Fuente Única de Verdad para Desarrollo
+Filosofía: Agnosticismo de Objetivo | Rigor Científico | Auditoría Proactiva
+
+TABLA DE CONTENIDOS
+1. VISIÓN Y FILOSOFÍA DEL SISTEMA
+2. MOTOR CIENTÍFICO (Source of Truth)
+3. ARQUITECTURA DE INGESTA
+4. MÓDULOS FUNCIONALES CLAVE
+5. REGLAS DE ORO POR PERFIL
+6. GESTIÓN DE ERRORES DE MEDICIÓN
+7. PRIVACIDAD Y GOBERNANZA DE DATOS
+8. MÓDULO DE ONBOARDING
+9. MODELO DE DATOS Y CONTRATOS
+10. STACK TECNOLÓGICO
+11. PROTOCOLO DE DESARROLLO
+ANEXO A: Fórmulas y Referencias Científicas
+ANEXO B: Roadmap de Implementación
+
+1. VISIÓN Y FILOSOFÍA DEL SISTEMA
+El Sistema de Auditoría Metabólica (SAM) es una herramienta polivalente de gestión nutricional que ajusta sus reglas dinámicamente según el perfil de usuario seleccionado. Los cálculos, alertas y recomendaciones cambian en tiempo real según el modo activo.
+1.1 Estados del Sistema
+Pérdida de Grasa (Déficit): Foco en protección de masa magra (LBM) mediante déficit calórico controlado y suelos biológicos estrictos.
+Recomposición Corporal: Balance calórico neutro con optimización de macronutrientes para ganancia muscular simultánea a pérdida de grasa.
+Mantenimiento/Recuperación: Foco en estabilidad hormonal, metabólica y restauración de sistemas tras períodos de déficit prolongado.
+1.2 Principios Fundamentales
+Agnosticismo de Objetivo: El sistema no impone objetivos, sino que adapta sus reglas al objetivo seleccionado por el usuario.
+Rigor Científico: Todas las fórmulas están basadas en literatura revisada por pares (Katch-McArdle, Phillips et al., Whittaker 2021).
+Auditoría Proactiva: Las alertas saltan ANTES de que se confirme una ingesta que rompa los suelos biológicos.
+Transparencia Total: Cada cálculo es explicado y auditable. El usuario siempre puede ver por qué el sistema recomienda X en lugar de Y.
+
+2. MOTOR CIENTÍFICO (Source of Truth)
+CRÍTICO: Cualquier cálculo dentro de la aplicación debe seguir estas fórmulas de forma estricta para evitar errores acumulados de medición.
+2.1 Masa Magra (LBM) - Dato Maestro
+LBM = Peso Total × (1 − %Grasa)
+⚠️ ADVERTENCIA CRÍTICA: No confundir LBM con SMM (Masa Muscular Esquelética) que reportan las básculas comerciales. La LBM incluye músculo + hueso + agua + órganos. SMM es típicamente 3-4 kg inferior a LBM.
+Ejemplo de cálculo:
+Peso: 102.1 kg
+%Grasa (báscula): 30.2%
+Masa grasa = 102.1 × 0.302 = 30.8 kg
+LBM = 102.1 − 30.8 = 71.3 kg
+SMM báscula (solo informativo): 67.5 kg
+2.2 Tasa Metabólica Basal (BMR)
+BMR = 370 + (21.6 × LBM)
+Fórmula de Katch-McArdle. Es la más precisa para individuos con composición corporal conocida, ya que considera la masa magra en lugar del peso total.
+Ejemplo (continuando del cálculo anterior):
+LBM = 71.3 kg
+BMR = 370 + (21.6 × 71.3) = 1,910 kcal
+2.3 Gasto Energético Total Diario (TDEE)
+TDEE = BMR + NEAT + Gasto por Ejercicio
+Componentes:
+BMR: Calculado dinámicamente cada día según peso y %grasa
+NEAT: Gasto por actividad diaria base (sedentario: 250 kcal, activo: 300-350 kcal)
+Gasto por Ejercicio: Calculado según actividad registrada (rucking, fuerza, cardio adicional)
+2.3.1 Fórmula de Rucking
+Calorías = 0.035 × Peso Efectivo × Minutos × (Velocidad ÷ 4.8)
+Donde:
+Peso Efectivo: 110 kg en días de carga completa (5/semana) o peso corporal real en días de recuperación activa (2/semana)
+Minutos: Duración total de la sesión
+Velocidad: En km/h (el sistema SIEMPRE debe preguntar si no se reporta)
+Ejemplo:
+60 min a 5.0 km/h con 110 kg
+Calorías = 0.035 × 110 × 60 × (5.0 ÷ 4.8) = 241 kcal
+TDEE del día = 1,910 + 300 + 241 = 2,451 kcal
+
+3. ARQUITECTURA DE INGESTA
+El registro y la planificación de alimentos se dividen en 6 momentos del día (slots), con diferentes niveles de obligatoriedad para garantizar flexibilidad sin perder rigor.
+3.1 Reglas de Validación de Slots
+Slots Obligatorios: Desayuno, Comida y Cena deben tener >200 kcal cada uno para considerarse válidos.
+Distribución de Proteína: Cada slot obligatorio debe contener ≥25% del objetivo diario de proteína.
+Ventana Temporal: Máximo 14 horas entre el desayuno y la cena (compatible con ayuno intermitente).
+Slots Adicionales: Limitados a 500 kcal totales para evitar picoteo descontrolado.
+3.2 Timing Óptimo de Nutrientes
+70% de carbohidratos en la primera ingesta post-ejercicio (ventana de sensibilidad a la insulina según Ivy et al.). Esto maximiza la reposición de glucógeno y minimiza el cortisol post-cardio.
+Ejemplo de distribución diaria:
+Objetivo diario: 120g de carbohidratos
+Desayuno (post-rucking): 84g HC (70%)
+Comida: 24g HC (20%)
+Cena: 12g HC (10%)
+
+4. MÓDULOS FUNCIONALES CLAVE
+4.1 Motor de Simulación (Sandbox)
+Funcionamiento: Permite proyectar ingestas (reales, improvisadas o del plan semanal) ANTES de confirmarlas. El usuario puede ver en tiempo real cómo afectará cada alimento añadido a sus macros diarios.
+Volatilidad: Los datos en modo simulación NO se guardan en el histórico hasta que el usuario pulse 'Confirmar Slot'. Esto permite experimentar sin contaminar los registros.
+Propósito: Previsualizar si una comida romperá los suelos biológicos de macros antes de consumirla, permitiendo ajustes proactivos.
+4.1.1 Gestión de Estado en Simulación
+Estado Temporal: Se guarda en localStorage/IndexedDB del navegador.
+Expiración: Las simulaciones no confirmadas se borran automáticamente tras 24 horas.
+Restauración: Al reabrir la app, se pregunta: 'Tienes una simulación pendiente de [Fecha/Hora]. ¿Deseas recuperarla?'
+4.2 Sistema de Alertas Proactivas
+Las alertas saltan tras cada ingesta (real o simulada) basándose en los Suelos Biológicos definidos para el perfil activo.
+Ejemplo de mensaje de alerta:
+⚠️ ALERTA: Grasas proyectadas en 58g. Te faltan 7g para alcanzar el suelo hormonal de 65g. Considera añadir: 10 almendras (7g grasa) o 1/4 aguacate (8g grasa).
+
+4.3 Planificador Inteligente y Auditoría de Recetario
+Ajuste Automático de Raciones: El sistema escala las cantidades de las recetas del usuario para cumplir con los macros del perfil activo, respetando días de déficit vs recargas.
+Auditoría de Variedad: Si el recetario no contiene suficientes recetas compatibles para alcanzar los suelos biológicos, el sistema emite un aviso con sugerencias específicas.
+Ejemplo de escalado dinámico:
+Receta base: 'Ensalada de atún'
+• 150g atún lata: 39g prot, 1g grasa, 0g HC
+• 50g aguacate: 1g prot, 7g grasa, 4g HC
+Total base: 40g prot, 8g grasa, 4g HC
+
+Objetivo para cena (Fase A.1): 60g prot, 20g grasa, 30g HC
+
+Sistema escala:
+• Atún: 230g (→ 60g prot)
+• Aguacate: 150g (→ 21g grasa)
+• Añade: 100g arroz basmati (→ 26g HC)
+Nueva receta: 61g prot, 23g grasa, 30g HC ✅
+4.3.1 Reglas del Planificador
+Máximo 2 repeticiones de la misma receta por semana (para mejorar adherencia y variedad micronutricional)
+Distribución automática: 70% HC en desayuno de días con rucking
+Prioriza recetas con mayor densidad proteica para cenas
+Evita recetas altas en grasa en días de déficit agresivo (>750 kcal)
+4.4 Auditoría Bi-semanal
+Panel de control automático cada 15 días que mide tendencias y valida progreso metabólico.
+
+5. REGLAS DE ORO POR PERFIL
+Los suelos biológicos son umbrales mínimos de macronutrientes basados en evidencia científica. Estos valores NO son negociables y el sistema debe alertar proactivamente si se proyecta incumplimiento.
+5.1 Fase A.1 - Déficit Agresivo (Pérdida de Grasa)
+5.1.1 Priorización Calórica en Déficit
+Orden estricto de asignación de calorías:
+Proteína (2.3-2.6 g/kg LBM) - Prioridad máxima
+Grasas (mínimo 65g) - Suelo hormonal no negociable
+Carbohidratos (mínimo 120g) - Glucógeno para rendimiento
+Calorías resultantes = déficit (NUNCA reducir grasas para crear más déficit)
+5.1.2 Actividad Física
+Rucking: 5 días a 110 kg + 2 días peso corporal real (60 min mínimo siempre)
+Fuerza: Mínimo 1 sesión/semana tren superior · Tempo excéntrico 1-0-3-1
+Creatina: 5g/día post-ingesta con HC (protección de LBM según Antonio & Ciccone 2013)
+5.2 Fase B - Déficit Moderado
+5.3 Mantenimiento/Break (Recuperación Hormonal)
+
+6. GESTIÓN DE ERRORES DE MEDICIÓN
+Las básculas de bioimpedancia tienen un margen de error del ±3-5% en %Grasa. El sistema debe implementar estrategias de mitigación para evitar decisiones erróneas basadas en mediciones puntuales.
+6.1 Estrategias de Mitigación
+Promedio Móvil Semanal: La LBM se calcula como promedio de los últimos 7 días para suavizar fluctuaciones diarias.
+Validación de Outliers: Si peso varía >2% en 24h → '⚠️ Variación inusual. ¿Verificar báscula?'. Si %Grasa varía >1.5% en 24h → Marca como 'Requiere revisión'.
+Calibración Manual: El usuario puede ajustar %Grasa si tiene medición DEXA/plicómetro. El sistema recalcula todo el histórico con el nuevo valor.
+6.2 Condiciones Especiales
+
+7. PRIVACIDAD Y GOBERNANZA DE DATOS
+7.1 Principios Fundamentales
+Local-first: Datos biométricos cifrados en dispositivo (AES-256). El usuario tiene control total sobre dónde residen sus datos.
+Sincronización opcional: Backup en nube solo con consentimiento explícito del usuario.
+Exportación: Usuario puede descargar todos sus datos en CSV/JSON en cualquier momento.
+Derecho al olvido: Función 'Borrar cuenta y datos' con confirmación de doble paso (no reversible).
+Anonimización: Análisis de patrones poblacionales usan hash SHA-256 sin ID personal.
+7.2 Cumplimiento Legal
+GDPR (Unión Europea): Cumplimiento total con principios de minimización de datos y portabilidad.
+LOPD (España): Adaptación específica para usuarios en territorio español.
+Datos de salud: Clasificados como 'categoría especial' con protecciones adicionales.
+
+8. MÓDULO DE ONBOARDING
+8.1 Flujo de Primer Uso
+Paso 1: Datos Antropométricos
+Peso actual (kg)
+% Grasa corporal (báscula bioimpedancia)
+Altura (cm)
+Edad
+Sexo
+Paso 2: Nivel de Actividad Base (NEAT)
+Pregunta: '¿Cuál describe mejor tu día a día sin contar ejercicio programado?'
+Paso 3: Ejercicio Programado
+El sistema NO pregunta aquí por ejercicio. El gasto por ejercicio se registra diariamente según la actividad real realizada (rucking, fuerza, cardio adicional). Esto permite un TDEE dinámico y preciso.
+Paso 4: Selección de Perfil
+Pérdida de Grasa (Déficit)
+Recomposición Corporal
+Mantenimiento/Recuperación
+Paso 5: Cálculos Iniciales
+LBM = Peso × (1 − %Grasa)
+BMR = 370 + (21.6 × LBM)
+TDEE_Base = BMR + NEAT
+Paso 6: Asignación de Suelos Biológicos
+El sistema asigna automáticamente los suelos de proteína, grasas y carbohidratos según el perfil seleccionado (ver Sección 5).
+8.2 Actualización Dinámica del TDEE
+CRÍTICO: El TDEE NO es fijo. Se recalcula cada día según la actividad real:
+TDEE_Diario = BMR + NEAT + Gasto_Ejercicio_Real
+Ejemplo día 1:
+BMR: 1,910 kcal (LBM 71.3 kg)
+NEAT: 300 kcal (nivel activo)
+Rucking 60 min a 5.0 km/h con 110 kg: 241 kcal
+TDEE del día: 2,451 kcal
+Ejemplo día 2 (mayor cardio):
+BMR: 1,910 kcal
+NEAT: 300 kcal
+Rucking 90 min a 5.2 km/h con 110 kg: 375 kcal
+TDEE del día: 2,585 kcal (+134 kcal vs día anterior)
+
+9. MODELO DE DATOS Y CONTRATOS
+Esta sección define los contratos de datos (DTOs) entre Frontend y Backend. Estos esquemas son la fuente de verdad para la comunicación entre capas.
+9.1 Entidades Core
+UserProfile
+{
+  userId: string;
+  age: number;
+  height: number; // cm
+  sex: 'M' | 'F';
+  activityLevel: 'sedentary' | 'light' | 'active' | 'very_active';
+  currentPhase: 'deficit_a' | 'deficit_b' | 'maintenance' | 'recomp';
+  neatCalories: number;
+  
+  // Calculados dinámicamente
+  currentWeight?: number;
+  currentBodyFat?: number;
+  currentLBM?: number;
+  currentBMR?: number;
+}
+DailyLog
+{
+  date: Date;
+  dayNumber: number;
+  phase: string;
+  
+  // Medición matutina
+  weight: number;
+  bodyFatPercent: number;
+  lbm: number; // Calculado
+  smm?: number; // De báscula (informativo)
+  
+  // Macros
+  protein: number;
+  fat: number;
+  carbs: number;
+  totalCalories: number;
+  
+  // Actividad
+  ruckingMinutes: number;
+  ruckingSpeed: number;
+  ruckingEffectiveWeight: 110 | number;
+  
+  // Cálculos
+  bmr: number;
+  tdee: number;
+  deficit: number;
+  
+  // Acumulados
+  deficitLast3Days: number;
+  cardioLast3Days: number;
+  
+  alerts: Alert[];
+  meals: MealSlot[];
+}
+MealSlot
+{
+  type: 'desayuno' | 'almuerzo' | 'comida' | 
+        'merienda' | 'cena' | 'adicionales';
+  isRequired: boolean;
+  foods: FoodItem[];
+  totalProtein: number;
+  totalFat: number;
+  totalCarbs: number;
+  totalCalories: number;
+  time?: string;
+  isSimulation: boolean;
+}
+9.2 Endpoints Críticos de API
+POST /api/daily/calculate-morning
+Recibe peso y %grasa matutino. Devuelve LBM, BMR, rangos de macros, acumulados y recomendación del día.
+POST /api/meal/simulate
+Proyecta macros diarios si se confirma la ingesta simulada. Devuelve alertas proactivas antes de confirmar.
+POST /api/meal/confirm
+Persiste la simulación como ingesta confirmada. Actualiza histórico y recalcula acumulados.
+
+10. STACK TECNOLÓGICO
+10.1 Frontend
+Angular 17+: Standalone Components, Signals para reactividad
+NgRx: Estado global (perfil usuario, logs diarios, recetas)
+Chart.js: Gráficas de tendencias (peso, LBM, déficit acumulado)
+IndexedDB: Almacenamiento local persistente cifrado
+Service Workers: PWA offline-first para uso sin conexión
+10.2 Backend
+FastAPI (Python 3.11+): API REST con validación Pydantic
+SQLAlchemy 2.0: ORM para mapeo objeto-relacional
+PostgreSQL 15: Base de datos principal con índices optimizados
+Redis: Cache de cálculos frecuentes (BMR, TDEE)
+Celery: Tareas asíncronas (auditoría bi-semanal, reportes)
+10.3 Infraestructura y DevOps
+Docker Compose: Entorno de desarrollo local estandarizado
+GitHub Actions: CI/CD con testing automático pre-merge
+Pytest + Playwright: Testing backend (unit) + E2E
+Hosting: Railway (PostgreSQL managed) + Vercel (Frontend CDN)
+10.4 Seguridad
+JWT: Autenticación con refresh + access tokens (15 min / 7 días)
+Argon2: Hashing de contraseñas (recomendación OWASP 2024)
+HTTPS obligatorio: Certificados Let's Encrypt con renovación automática
+Rate limiting: 100 req/min por IP, 1000 req/hora por usuario
+
+11. PROTOCOLO DE DESARROLLO
+11.1 Principios SOLID
+Aplicación estricta de principios de diseño orientado a objetos:
+Single Responsibility: Cada clase/módulo tiene una única razón para cambiar
+Open/Closed: Abierto a extensión, cerrado a modificación
+Liskov Substitution: Subclases intercambiables sin romper funcionalidad
+Interface Segregation: Interfaces específicas mejor que generales
+Dependency Inversion: Depender de abstracciones, no de concreciones
+11.2 Flujo de Trabajo Simultáneo
+Frontend Developer: Desarrolla la UI de simulación y define el contrato de datos (DTOs) esperado del backend.
+Backend Developer: Implementa el motor de cálculo científico y la persistencia en Python, respetando los DTOs acordados.
+Code Reviewers: Validan que el código sea limpio (SOLID) y que el rigor científico (fórmulas) sea exacto en ambos lados.
+QA Tester: Ejecuta pruebas de flujo extremo (ej: 'Simular una cena que incumpla proteína y verificar que salte la alerta').
+11.3 Criterios de Calidad
+Pull Request Requirements:
+Cobertura de tests ≥80% para lógica de negocio
+Todos los tests E2E pasando (simulación → confirmación → auditoría)
+Lint sin errores (ESLint frontend, Ruff backend)
+Documentación de API actualizada (OpenAPI/Swagger)
+Aprobación de mínimo 1 revisor que valide rigor científico
+
+ANEXO A: FÓRMULAS Y REFERENCIAS CIENTÍFICAS
+Referencias Completas:
+Katch, V. L., & McArdle, W. D. (1996). Introduction to nutrition, exercise, and health. Lippincott Williams & Wilkins.
+Phillips, S. M., & Van Loon, L. J. (2011). Dietary protein for athletes: from requirements to optimum adaptation. Journal of sports sciences, 29(sup1), S29-S38.
+Whittaker, J., & Wu, K. (2021). Low-fat diets and testosterone in men: Systematic review and meta-analysis of intervention studies. The Journal of Steroid Biochemistry and Molecular Biology, 210, 105878.
+Ivy, J. L., et al. (1988). Muscle glycogen synthesis after exercise: effect of time of carbohydrate ingestion. Journal of applied physiology, 64(4), 1480-1485.
+Antonio, J., & Ciccone, V. (2013). The effects of pre versus post workout supplementation of creatine monohydrate on body composition and strength. Journal of the International Society of Sports Nutrition, 10(1), 36.
+Helms, E. R., Aragon, A. A., & Fitschen, P. J. (2014). Evidence-based recommendations for natural bodybuilding contest preparation: nutrition and supplementation. Journal of the International Society of Sports Nutrition, 11(1), 20.
+
+ANEXO B: ROADMAP DE IMPLEMENTACIÓN
+FASE 1: MVP (4-6 semanas)
+Onboarding + cálculo LBM/BMR dinámico
+Sistema de slots (6 tipos: desayuno, almuerzo, comida, merienda, cena, adicionales)
+Modo simulación por slot con proyección en tiempo real
+Alertas proactivas (proteína, grasas, HC) con umbrales configurados
+Registro manual de actividad (rucking con fórmula exacta)
+Outputs: Google Keep (resumen auditoría) + Google Sheets (fila datos)
+FASE 2: Inteligencia (6-8 semanas)
+Planificador semanal con asignación automática de recetas
+Recetario con escalado automático de raciones según macros objetivo
+Auditoría bi-semanal (gráficas de tendencias: peso, LBM, déficit)
+Sistema de acumulados 3 días (déficit + cardio) con recomendaciones automáticas
+FASE 3: Optimización (8-10 semanas)
+Integración con wearables (opcional: Garmin, Apple Watch para TDEE preciso)
+Exportación de datos completa (CSV/JSON con todo el histórico)
+Sistema de objetivos personalizables (más allá de los 3 perfiles base)
+Modo comunidad (opcional): Datos anónimos agregados para benchmarking
+FIN DEL DOCUMENTO MAESTRO
+Versión 1.4 - Abril 2026
+Este documento es la Fuente Única de Verdad para el desarrollo del Sistema de Auditoría Metabólica.
