@@ -1,0 +1,47 @@
+schema: spec-driven
+
+context: |
+  biohack-ddbb is the SAM infrastructure and database repository.
+  It owns PostgreSQL/Redis local orchestration, Alembic migrations, seed scripts, and strategic specs.
+  The application model imports are shared with the sibling biohack-back repository.
+  Existing project workflow requires scope isolation, ADR traceability, and scope-test then QA validation.
+
+strict_tdd: false
+
+testing:
+  runner: unavailable
+  command: null
+  framework: null
+  unit: false
+  integration: false
+  e2e: false
+  coverage: false
+  linter: null
+  type_checker: null
+  formatter: null
+
+rules:
+  proposal:
+    - document intent, scope, and impact before implementation
+  specs:
+    - define requirements and scenarios in English unless project conventions require otherwise
+  design:
+    - preserve scope isolation
+    - record architecture decisions in docs/architecture_decisions.md
+  tasks:
+    - make tasks independently verifiable
+  apply:
+    guidelines:
+      - follow existing code patterns
+      - keep changes within the selected scope
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: ""
+    coverage_threshold: 0
+    guidelines:
+      - report static inspection limits
+      - do not claim tests when no runner is detected
+  archive:
+    - sync completed deltas only after verification

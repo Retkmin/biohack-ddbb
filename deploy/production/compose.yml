@@ -3,12 +3,13 @@ name: sam-production
 services:
   postgres:
     image: postgres:15.12-alpine
-    profiles: [production, operations]
+    profiles: [production]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
       POSTGRES_DB: ${POSTGRES_DB:?required}
-    volumes: [postgres_data:/var/lib/postgresql/data]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     networks: [internal]
     healthcheck:
       test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
@@ -19,9 +20,10 @@ services:
 
   redis:
     image: redis:7.4.2-alpine
-    profiles: [production, operations]
+    profiles: [production]
     command: ["redis-server", "--appendonly", "yes"]
-    volumes: [redis_data:/data]
+    volumes:
+      - redis_data:/data
     networks: [internal]
     healthcheck:
       test: [CMD, "redis-cli", "ping"]
@@ -30,9 +32,10 @@ services:
       retries: 12
 
   api:
-    build: {context: ../../../biohack-back}
+    build:
+      context: ../../../biohack-back
     profiles: [production]
-    environment: &app-environment
+    environment:
       ENVIRONMENT: ${ENVIRONMENT:?required}
       DATABASE_URL: ${DATABASE_URL:?required}
       DATABASE_RUNTIME_ROLE: ${DATABASE_RUNTIME_ROLE:?required}
@@ -49,8 +52,10 @@ services:
       AI_INTAKE_ENABLED: ${AI_INTAKE_ENABLED:?required}
     networks: [internal]
     depends_on:
-      postgres: {condition: service_healthy}
-      redis: {condition: service_healthy}
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: [CMD, "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
       interval: 10s
@@ -59,38 +64,79 @@ services:
       start_period: 20s
 
   worker:
-    build: {context: ../../../biohack-back}
+    build:
+      context: ../../../biohack-back
     profiles: [production]
     command: ["celery", "-A", "app.infrastructure.celery_worker:celery_app", "worker", "--loglevel=INFO"]
-    environment: *app-environment
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:?required}
+      DATABASE_URL: ${DATABASE_URL:?required}
+      DATABASE_RUNTIME_ROLE: ${DATABASE_RUNTIME_ROLE:?required}
+      SECRET_KEY: ${SECRET_KEY:?required}
+      JWT_SECRET_PROVENANCE_VERSION: ${JWT_SECRET_PROVENANCE_VERSION:?required}
+      JWT_SECRET_FILE: ${JWT_SECRET_FILE:?required}
+      JWT_SECRET_RECEIPT_FILE: ${JWT_SECRET_RECEIPT_FILE:?required}
+      JWT_SECRET_REPOSITORY_ROOT: ${JWT_SECRET_REPOSITORY_ROOT:?required}
+      REDIS_URL: ${REDIS_URL:?required}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?required}
+      AI_PROVIDER: ${AI_PROVIDER:?required}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?required}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:?required}
+      AI_INTAKE_ENABLED: ${AI_INTAKE_ENABLED:?required}
     networks: [internal]
     depends_on:
-      postgres: {condition: service_healthy}
-      redis: {condition: service_healthy}
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   beat:
-    build: {context: ../../../biohack-back}
+    build:
+      context: ../../../biohack-back
     profiles: [production]
     command: ["celery", "-A", "app.infrastructure.celery_worker:celery_app", "beat", "--loglevel=INFO"]
-    environment: *app-environment
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:?required}
+      DATABASE_URL: ${DATABASE_URL:?required}
+      DATABASE_RUNTIME_ROLE: ${DATABASE_RUNTIME_ROLE:?required}
+      SECRET_KEY: ${SECRET_KEY:?required}
+      JWT_SECRET_PROVENANCE_VERSION: ${JWT_SECRET_PROVENANCE_VERSION:?required}
+      JWT_SECRET_FILE: ${JWT_SECRET_FILE:?required}
+      JWT_SECRET_RECEIPT_FILE: ${JWT_SECRET_RECEIPT_FILE:?required}
+      JWT_SECRET_REPOSITORY_ROOT: ${JWT_SECRET_REPOSITORY_ROOT:?required}
+      REDIS_URL: ${REDIS_URL:?required}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:?required}
+      AI_PROVIDER: ${AI_PROVIDER:?required}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?required}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:?required}
+      AI_INTAKE_ENABLED: ${AI_INTAKE_ENABLED:?required}
     networks: [internal]
     depends_on:
-      postgres: {condition: service_healthy}
-      redis: {condition: service_healthy}
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   caddy:
     build:
       context: ../../../biohack-front
-      args: {VITE_API_URL: /api}
+      args:
+        VITE_API_URL: /api
     profiles: [production]
-    ports: ["80:80", "443:443"]
-    volumes: [caddy_data:/data, caddy_config:/config]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
     networks: [public, internal]
     depends_on:
-      api: {condition: service_healthy}
+      api:
+        condition: service_healthy
 
   migration:
-    build: {context: ../../../biohack-back}
+    build:
+      context: ../../../biohack-back
     profiles: [operations]
     command: ["alembic", "upgrade", "f7a8b9c0d1e2"]
     environment:
@@ -98,10 +144,12 @@ services:
       DATABASE_URL: ${DATABASE_URL:?required}
     networks: [internal]
     depends_on:
-      postgres: {condition: service_healthy}
+      postgres:
+        condition: service_healthy
 
   provisioning:
-    build: {context: ../../../biohack-back}
+    build:
+      context: ../../../biohack-back
     profiles: [operations]
     command: ["python", "-m", "app.ops.provision_runtime_login"]
     environment:
@@ -109,10 +157,12 @@ services:
       DATABASE_LOGIN_PASSWORD: ${DATABASE_LOGIN_PASSWORD:?required}
     networks: [internal]
     depends_on:
-      postgres: {condition: service_healthy}
+      postgres:
+        condition: service_healthy
 
   migration-verification:
-    build: {context: ../../../biohack-back}
+    build:
+      context: ../../../biohack-back
     profiles: [operations]
     command: ["python", "-m", "app.ops.verify_migration_deployment"]
     environment:
@@ -120,17 +170,15 @@ services:
       DATABASE_LOGIN_PASSWORD: ${DATABASE_LOGIN_PASSWORD:?required}
       MIGRATION_DEPLOYMENT_TARGET_KIND: ${MIGRATION_DEPLOYMENT_TARGET_KIND:?required}
       MIGRATION_DEPLOYMENT_RECEIPT_PATH: ${MIGRATION_DEPLOYMENT_RECEIPT_PATH:?required}
-    volumes:
-      - type: bind
-        source: ${MIGRATION_DEPLOYMENT_RECEIPTS_DIR:?required}
-        target: /var/lib/sam/migration-verification-receipts
     networks: [internal]
     depends_on:
-      postgres: {condition: service_healthy}
+      postgres:
+        condition: service_healthy
 
 networks:
   public:
-  internal: {internal: true}
+  internal:
+    internal: true
 
 volumes:
   postgres_data:
