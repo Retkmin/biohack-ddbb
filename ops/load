@@ -1,0 +1,12 @@
+#!/bin/sh
+# ops/load — credential-free source inventory (read-only, no write).
+#
+# Produces a deterministic plan/inventory summary of the identity store's
+# profile rows without writing to any store. The default mode is --dry-run;
+# --apply delegates the read-only inventory to the backend adapter via Compose.
+# No database credentials are accepted or emitted.
+set -u
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib/operation-contract.sh"
+contract_main "load" "$@"
+exit $?

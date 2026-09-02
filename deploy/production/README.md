@@ -35,6 +35,7 @@ or runs a service.
 | PostgreSQL initialization | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` |
 | Runtime database identity | `DATABASE_URL`, `DATABASE_RUNTIME_ROLE` |
 | Maintenance database identity | `DATABASE_ADMIN_URL`, `DATABASE_LOGIN_PASSWORD` |
+| Isolated store endpoints | `IDENTITY_DATABASE_URL`, `DOMAIN_DATABASE_URL`, `IDENTITY_POSTGRES_USER`, `IDENTITY_POSTGRES_PASSWORD`, `IDENTITY_POSTGRES_DB`, `DOMAIN_POSTGRES_USER`, `DOMAIN_POSTGRES_PASSWORD`, `DOMAIN_POSTGRES_DB` |
 | Application security | `ENVIRONMENT`, `SECRET_KEY`, `JWT_SECRET_PROVENANCE_VERSION`, `JWT_SECRET_FILE`, `JWT_SECRET_RECEIPT_FILE`, `JWT_SECRET_REPOSITORY_ROOT` |
 | Background services | `REDIS_URL`, `CELERY_BROKER_URL` |
 | AI configuration | `AI_PROVIDER`, `GEMINI_API_KEY`, `CLAUDE_API_KEY`, `AI_INTAKE_ENABLED` |
@@ -71,3 +72,39 @@ before the migration and writes a retained redacted receipt to the protected
 mount. Do not run an Alembic downgrade. If a migration fails, stop before
 application startup, retain the receipt, and follow the cross-repository
 runbook's fix-forward or verified-restore boundary.
+
+## Isolated-Store Operations (credential-free wrappers)
+
+The `ops/*` wrappers are the operator entrypoints for the identity/domain store
+split. They are credential-free: every operation is dry-run-first, idempotent,
+checksummed, and rejects credential-like arguments before any Compose call.
+Credentials reach the backend adapter only through the protected VPS
+environment source; no wrapper embeds or accepts a URL, user, password, token,
+or secret-file value.
+
+Run from `biohack-ddbb`. Replace `/etc/sam/production.env` with the protected
+VPS-only environment source.
+
+```bash
+# Inventory (read-only) — no write is ever performed by the default dry-run.
+ops/load --store identity --receipt-dir /var/lib/sam/receipts
+ops/load --store domain  --receipt-dir /var/lib/sam/receipts
+
+# Backfill — dry-run first, then explicit apply.
+ops/backfill --dry-run --store identity
+ops/backfill --apply --store identity
+
+# Reconciliation — blocks (non-zero) on any discrepancy.
+ops/reconcile --dry-run --store identity
+ops/reconcile --apply --store identity
+
+# Per-store backup and restore (backup profile; restore is approval-gated).
+ops/backup --dry-run --store domain
+ops/backup --apply --store domain
+ops/restore --dry-run --store domain
+```
+
+The wrappers emit a redacted JSON receipt to stdout and, when `--receipt-dir`
+is given, write `receipt.json` there. Receipts contain action, opaque IDs,
+counts, status, and checksums only. See
+`../docs/database-isolation-runbook.md` for the full procedure.

@@ -1,0 +1,15 @@
+#!/bin/sh
+# ops/cutover — credential-free, dry-run-first, approval-gated cutover wrapper.
+#
+# Delegates the bounded cutover routing decision to the backend adapter via
+# Compose. --dry-run (default) emits a plan and performs no write; --apply runs
+# the reconciliation-gated, bounded cutover decision and exits non-zero when it
+# is blocked (unbounded window or unresolved discrepancy). No backend SQL is
+# copied and no database credentials are accepted or emitted. Execution
+# (--apply) is approval-gated and runs only inside a declared, bounded
+# maintenance window after a clean reconciliation and restore drill.
+set -u
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib/operation-contract.sh"
+contract_main "cutover" "$@"
+exit $?

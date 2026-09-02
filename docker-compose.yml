@@ -1,16 +1,30 @@
 services:
-  postgres:
+  identity-postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      POSTGRES_USER: ${IDENTITY_POSTGRES_USER:?IDENTITY_POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${IDENTITY_POSTGRES_PASSWORD:?IDENTITY_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${IDENTITY_POSTGRES_DB:?IDENTITY_POSTGRES_DB is required}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - identity_postgres_data:/var/lib/postgresql/data
+    networks: [identity]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U $${IDENTITY_POSTGRES_USER} -d $${IDENTITY_POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  domain-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${DOMAIN_POSTGRES_USER:?DOMAIN_POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${DOMAIN_POSTGRES_PASSWORD:?DOMAIN_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${DOMAIN_POSTGRES_DB:?DOMAIN_POSTGRES_DB is required}
+    volumes:
+      - domain_postgres_data:/var/lib/postgresql/data
+    networks: [domain]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${DOMAIN_POSTGRES_USER} -d $${DOMAIN_POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -25,5 +39,10 @@ services:
       timeout: 5s
       retries: 5
 
+networks:
+  identity:
+  domain:
+
 volumes:
-  postgres_data:
+  identity_postgres_data:
+  domain_postgres_data:

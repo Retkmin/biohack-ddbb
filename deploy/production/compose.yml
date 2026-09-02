@@ -1,6 +1,10 @@
 name: sam-production
 
 services:
+  # Legacy combined store: retained read-only through the cutover/rollback
+  # window. The application still routes here until a later phase switches to
+  # the two isolated stores below; this copy is never deleted until the
+  # restore drill passes.
   postgres:
     image: postgres:15.12-alpine
     profiles: [production, operations]
@@ -12,6 +16,38 @@ services:
     networks: [internal]
     healthcheck:
       test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  identity-postgres:
+    image: postgres:15.12-alpine
+    profiles: [production, operations]
+    environment:
+      POSTGRES_USER: ${IDENTITY_POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${IDENTITY_POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${IDENTITY_POSTGRES_DB:?required}
+    volumes: [identity_postgres_data:/var/lib/postgresql/data]
+    networks: [identity]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $$IDENTITY_POSTGRES_USER -d $$IDENTITY_POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  domain-postgres:
+    image: postgres:15.12-alpine
+    profiles: [production, operations]
+    environment:
+      POSTGRES_USER: ${DOMAIN_POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${DOMAIN_POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${DOMAIN_POSTGRES_DB:?required}
+    volumes: [domain_postgres_data:/var/lib/postgresql/data]
+    networks: [domain]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $$DOMAIN_POSTGRES_USER -d $$DOMAIN_POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -128,12 +164,77 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
 
+  # Credential-free store operation adapter. The biohack-ddbb ``ops/*``
+  # wrappers invoke this service with a non-secret action + store; the database
+  # credentials below come only from the protected VPS environment source.
+  store-operation:
+    build: {context: ../../../biohack-back}
+    profiles: [operations]
+    entrypoint: ["python", "-m", "app.infrastructure.migration.operation"]
+    environment:
+      IDENTITY_DATABASE_URL: ${IDENTITY_DATABASE_URL:?required}
+      DOMAIN_DATABASE_URL: ${DOMAIN_DATABASE_URL:?required}
+    networks: [identity, domain]
+    depends_on:
+      identity-postgres: {condition: service_healthy}
+      domain-postgres: {condition: service_healthy}
+
+  backup-identity:
+    image: postgres:15.12-alpine
+    profiles: [backup]
+    environment:
+      PGPASSWORD: ${IDENTITY_POSTGRES_PASSWORD:?required}
+    command: ["pg_dump", "-h", "identity-postgres", "-U", "${IDENTITY_POSTGRES_USER:?required}", "-d", "${IDENTITY_POSTGRES_DB:?required}", "-f", "/backups/identity.dump"]
+    volumes: [identity_backups:/backups]
+    networks: [identity]
+    depends_on:
+      identity-postgres: {condition: service_healthy}
+
+  backup-domain:
+    image: postgres:15.12-alpine
+    profiles: [backup]
+    environment:
+      PGPASSWORD: ${DOMAIN_POSTGRES_PASSWORD:?required}
+    command: ["pg_dump", "-h", "domain-postgres", "-U", "${DOMAIN_POSTGRES_USER:?required}", "-d", "${DOMAIN_POSTGRES_DB:?required}", "-f", "/backups/domain.dump"]
+    volumes: [domain_backups:/backups]
+    networks: [domain]
+    depends_on:
+      domain-postgres: {condition: service_healthy}
+
+  restore-identity:
+    image: postgres:15.12-alpine
+    profiles: [backup]
+    environment:
+      PGPASSWORD: ${IDENTITY_POSTGRES_PASSWORD:?required}
+    command: ["pg_restore", "-h", "identity-postgres", "-U", "${IDENTITY_POSTGRES_USER:?required}", "-d", "${IDENTITY_POSTGRES_DB:?required}", "--clean", "--if-exists", "/backups/identity.dump"]
+    volumes: [identity_backups:/backups]
+    networks: [identity]
+    depends_on:
+      identity-postgres: {condition: service_healthy}
+
+  restore-domain:
+    image: postgres:15.12-alpine
+    profiles: [backup]
+    environment:
+      PGPASSWORD: ${DOMAIN_POSTGRES_PASSWORD:?required}
+    command: ["pg_restore", "-h", "domain-postgres", "-U", "${DOMAIN_POSTGRES_USER:?required}", "-d", "${DOMAIN_POSTGRES_DB:?required}", "--clean", "--if-exists", "/backups/domain.dump"]
+    volumes: [domain_backups:/backups]
+    networks: [domain]
+    depends_on:
+      domain-postgres: {condition: service_healthy}
+
 networks:
   public:
   internal: {internal: true}
+  identity: {internal: true}
+  domain: {internal: true}
 
 volumes:
   postgres_data:
   redis_data:
   caddy_data:
   caddy_config:
+  identity_postgres_data:
+  domain_postgres_data:
+  identity_backups:
+  domain_backups:

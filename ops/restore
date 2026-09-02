@@ -1,0 +1,13 @@
+#!/bin/sh
+# ops/restore — credential-free, per-store restore wrapper.
+#
+# Selects the per-store restore target (restore-identity or restore-domain) and
+# runs it via Compose. --dry-run (default) emits a plan and performs no write;
+# --apply triggers the pg_restore target for the selected store only. Restore is
+# approval-gated and never runs automatically; no database credentials are
+# accepted or emitted by this wrapper.
+set -u
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib/operation-contract.sh"
+contract_main "restore" "$@"
+exit $?

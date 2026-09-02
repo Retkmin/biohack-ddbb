@@ -1,0 +1,13 @@
+#!/bin/sh
+# ops/backup — credential-free, per-store backup wrapper.
+#
+# Selects the per-store backup target (backup-identity or backup-domain) and
+# runs it via Compose. --dry-run (default) emits a plan and performs no write;
+# --apply triggers the pg_dump target for the selected store only. The domain
+# backup path is never crossed by identity artifacts. No database credentials
+# are accepted or emitted by this wrapper.
+set -u
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib/operation-contract.sh"
+contract_main "backup" "$@"
+exit $?

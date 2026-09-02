@@ -1,0 +1,15 @@
+#!/bin/sh
+# ops/rollback — credential-free, dry-run-first, approval-gated rollback wrapper.
+#
+# Delegates the non-destructive rollback routing decision to the backend adapter
+# via Compose. --dry-run (default) emits a plan and performs no write; --apply
+# runs the rollback decision (authority -> legacy, new-store writes disabled,
+# legacy copy preserved, never destructive) and exits non-zero when blocked
+# (unresolved reconciliation or missing legacy copy). No backend SQL is copied
+# and no database credentials are accepted or emitted. Execution (--apply) is
+# approval-gated.
+set -u
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib/operation-contract.sh"
+contract_main "rollback" "$@"
+exit $?

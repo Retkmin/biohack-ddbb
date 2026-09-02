@@ -1,0 +1,13 @@
+#!/bin/sh
+# ops/reconcile — credential-free opaque-ID reconciliation (blocks on mismatch).
+#
+# Delegates the reconciliation contract to the backend adapter via Compose.
+# --dry-run (default) emits a plan and performs no write; --apply runs the
+# comparison and exits non-zero when reconciliation is blocked (missing,
+# duplicate, checksum, or count discrepancy). No backend SQL is copied and no
+# database credentials are accepted or emitted.
+set -u
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib/operation-contract.sh"
+contract_main "reconcile" "$@"
+exit $?
