@@ -1,0 +1,40 @@
+name: biohack-local-development
+
+# Persistent local replica for daily development. This is intentionally separate
+# from docker-compose.local-test.yml, which is a disposable test harness.
+services:
+  identity-postgres:
+    image: postgres:15.12-alpine
+    environment:
+      POSTGRES_USER: ${IDENTITY_POSTGRES_USER:?IDENTITY_POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${IDENTITY_POSTGRES_PASSWORD:?IDENTITY_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${IDENTITY_POSTGRES_DB:?IDENTITY_POSTGRES_DB is required}
+    ports:
+      - "127.0.0.1:54321:5432"
+    volumes:
+      - local_development_identity_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${IDENTITY_POSTGRES_USER} -d $${IDENTITY_POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  domain-postgres:
+    image: postgres:15.12-alpine
+    environment:
+      POSTGRES_USER: ${DOMAIN_POSTGRES_USER:?DOMAIN_POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${DOMAIN_POSTGRES_PASSWORD:?DOMAIN_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${DOMAIN_POSTGRES_DB:?DOMAIN_POSTGRES_DB is required}
+    ports:
+      - "127.0.0.1:54322:5432"
+    volumes:
+      - local_development_domain_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${DOMAIN_POSTGRES_USER} -d $${DOMAIN_POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  local_development_identity_data:
+  local_development_domain_data:

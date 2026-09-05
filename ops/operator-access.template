@@ -1,0 +1,7 @@
+# Nonfunctional placeholder. Provisioning is required before any VPS operation.
+# Do not place passwords, URLs, tokens, private keys, or production values here.
+OPERATOR_TARGET=UNSET
+OPERATOR_ROUTE=UNPROVISIONED
+OPERATOR_BASTION=UNSET
+OPERATOR_LOCAL_BIND=127.0.0.1:UNSET
+OPERATOR_AUDIT_RECEIPT_DIR=UNSET

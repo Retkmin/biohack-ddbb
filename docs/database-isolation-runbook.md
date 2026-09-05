@@ -1,154 +1,146 @@
-# Database Isolation Runbook
+# Database Isolation Runbook — Greenfield VPS Deployment
 
-Operational runbook for the `database-superuser-isolation` change. It covers
-inventory, dry-run/apply, discrepancy repair, and restore evidence for the
-identity/domain store split. All operations are credential-free, dry-run-first,
-idempotent, and checksummed.
+Operational runbook for the first greenfield VPS deployment
+(`database-isolation-vps-deployment`). It documents the fail-closed greenfield
+sequence — immutable plan preflight, empty-store verification, empty-schema
+initialization, health gates, Caddy DNS/TLS activation, and HTTPS smoke — plus
+the named human approvals, prerequisite attestations, redaction, and retention
+rules. All operations are credential-free, dry-run-first, and checksummed.
 
-> Scope boundary: this runbook documents operations only. No deployment,
-> cutover, data movement, or credential change is performed by following it.
-> The cutover/rollback controls are implemented in Phase 4.2 (section 7); their
-> execution and final verification remain approval-gated in Phase 4.3. See
-> `cutover-rollback-rehearsal.md` for the approval-gated rehearsal procedure and
-> the exact execution prerequisites.
+> Scope boundary: this runbook separates LOCAL PREPARATION (Phases 1–3, run
+> locally and credential-free) from RUNTIME APPROVAL (Phase 4, executed only on
+> the authorized VPS by a named human after an explicit go/no-go). No
+> deployment, schema initialization, traffic change, or credential handling is
+> performed by reading this runbook alone.
 
-## Prerequisites
+## 1. Greenfield deployment sequence
 
-- A protected VPS-only environment source (e.g. `/etc/sam/production.env`)
-  that Compose consumes. This file is never committed, imaged, or logged.
-- `docker compose` available; the `ops/*` wrappers run from `biohack-ddbb`.
-- Owner-only receipt directory, e.g. `install -d -m 0700 /var/lib/sam/receipts`.
+The first VPS release is greenfield: the target has no legacy Biohack stack and
+no legacy production data, so there is no migration, backfill, reconciliation,
+cutover, or rollback. The sequence is:
 
-## Invariants
+1. **Preflight** — validate the immutable deployment plan, protected
+   configuration, release digests, DNS names, TLS readiness, capacity limits,
+   and retention window against the named approvals. Any mismatch blocks before
+   any write.
+2. **Empty-store verification** — confirm both the identity and domain
+   PostgreSQL stores are empty. A non-empty store fails closed and is never
+   imported, backfilled, or routed.
+3. **Empty-schema initialization** — initialize only empty scoped schemas after
+   the initialization go/no-go passes.
+4. **Health gates** — verify the required service health internally before any
+   public exposure.
+5. **DNS/TLS + Caddy activation** — Caddy is the sole 80/443 entrypoint and owns
+   DNS/TLS termination; traffic is enabled only in the `active` state.
+6. **HTTPS smoke + acceptance** — run the approved user smoke journey and record
+   the acceptance go/no-go before traffic enablement.
 
-1. **Credential-free wrappers.** No wrapper accepts or emits a URL, user,
-   password, token, `PGPASSWORD`, or secret-file value. Credential-like
-   arguments are rejected before any Compose call.
-2. **Dry-run first.** The default mode is `--dry-run`; a write happens only
-   with an explicit `--apply`.
-3. **Idempotent and checksummed.** Backfill inserts only accepted rows and
-   never overwrites a checksum mismatch; every operation emits a deterministic
-   `plan_checksum`.
-4. **No backend SQL in this repository.** The wrappers invoke the versioned
-   backend adapter image through Compose; no SQL or domain logic is copied.
-5. **No cross-store join.** Identity and domain stores are queried
-   independently; reconciliation compares opaque IDs in the backend.
+Failure at any gate disables traffic, fences writers, and retains redacted
+diagnostics and receipts for the approved retention window.
 
-## 1. Inventory (`ops/load`)
+## 2. Deployment plan (control manifest)
 
-Produces a read-only inventory of the source identity store's profile rows
-without writing to any store.
+The deployment is governed by a single, checksummed deployment plan
+(`deploy/production/control-manifest.schema.json`) that is the configuration
+authority for the greenfield release. The backend adapter validates it
+fail-closed before any preflight/initialization/activation decision; no runtime
+write happens without a validated plan and its named approvals.
 
-```bash
-ops/load --store identity --receipt-dir /var/lib/sam/receipts
-```
+The plan declares, all credential-free:
 
-Interpret the receipt: `counts.inserted` are rows that would be loaded,
-`counts.unchanged` are already accepted, and `blocked` is true only if a
-checksum mismatch exists.
+- `plan_sha256` — the immutable plan checksum;
+- `environment` — always `vps-greenfield`;
+- `backend_digest` / `frontend_digest` — versioned, immutable release digests;
+- `dns_names` — the approved public DNS names;
+- `approvals` — named preflight/initialization/activation go/no-go approvals;
+- `protected_config_attestation` — opaque attestation of the owner-only
+  protected environment source (never a credential);
+- `tls_readiness`, `capacity_limits` — attestation objects;
+- `retention_window` — the diagnostic-retention window in seconds;
+- `state` — `preflight | initialized | healthy | active | blocked`;
+- `receipt_ids` — retained redacted receipts this plan depends on;
+- `residual_risk_recorded` — the same-host administrative residual risk.
 
-## 2. Dry-run / apply (`ops/backfill`)
+The plan checksum is immutable and deterministic; a changed plan changes the
+decision receipt's `plan_checksum`.
 
-Always dry-run first, then apply the same plan.
+## 3. Prerequisite attestations
 
-```bash
-# Plan only — performs no write.
-ops/backfill --dry-run --store identity --receipt-dir /var/lib/sam/receipts
+Before any runtime write, the plan must attest every prerequisite:
 
-# Apply the idempotent, checksummed backfill.
-ops/backfill --apply --store identity --receipt-dir /var/lib/sam/receipts
-```
+| Prerequisite | Attestation field |
+|---|---|
+| Authorized VPS access + protected configuration | `protected_config_attestation` |
+| Capacity limits | `capacity_limits.attested` |
+| TLS readiness + DNS/domain control | `tls_readiness.attested` + `dns_names` |
+| Versioned release digests | `backend_digest` / `frontend_digest` |
+| Immutable plan checksum | `plan_sha256` |
+| Diagnostic-retention approval | `retention_window` |
+| Same-host residual risk recorded | `residual_risk_recorded` |
 
-Re-running `--apply` over accepted rows changes nothing (idempotent). A
-mismatched row is reported, never overwritten, and blocks cutover.
+Missing evidence blocks; no runtime write proceeds.
 
-## 3. Reconciliation (`ops/reconcile`)
+## 4. Owners
 
-Detects missing, duplicate, and checksum-mismatched opaque IDs plus a
-record-count mismatch. A blocked reconciliation exits non-zero.
+| Responsibility | Owner |
+|---|---|
+| Protected environment source + plan publication | Named deployment operator |
+| Preflight go/no-go | Named preflight approver |
+| Initialization go/no-go | Named initialization approver |
+| Activation / acceptance go/no-go | Named activation approver |
 
-```bash
-ops/reconcile --dry-run --store identity --receipt-dir /var/lib/sam/receipts
-ops/reconcile --apply --store identity --receipt-dir /var/lib/sam/receipts
-```
+Owner identities are recorded in the plan `approver` fields as opaque
+principals (role/account name) — never a credential or a shared secret.
 
-Exit code 0 means clean; any discrepancy returns a non-zero exit and a
-`blocked: true` receipt.
+## 5. Smoke journey
 
-## 4. Discrepancy repair
+The approved user-facing smoke journey runs only after internal health passes
+and before acceptance. It covers: authenticated HTTPS reachability of the public
+endpoint, the primary read path, and one representative write/read round-trip
+against the isolated domain store. Any failed step denies acceptance and keeps
+traffic disabled.
 
-When reconciliation reports a discrepancy:
+## 6. Redaction and retention
 
-1. Review the redacted receipt (opaque IDs + counts only).
-2. Repair forward in the source of truth; never hand-edit checksums and never
-   perform a destructive migration reversal.
-3. Re-run `ops/reconcile --apply` until it exits 0.
+Every operation emits a redacted JSON receipt containing only:
 
-A dangling reference (a domain record pointing at an unavailable identity) is
-reported by ID and repaired through the defined lifecycle, never by a
-cross-store join.
+- `action`, `dry_run`, `plan_checksum`, `counts`, `blocked`;
+- opaque plan/state/environment flags and counts — never email, password,
+  token, URL, role, or connection value.
 
-## 5. Backup and restore evidence (`ops/backup`, `ops/restore`)
+Retain every receipt (dry-run, preflight, empty-store, initialization,
+health/smoke, activation) in the owner-only receipt directory
+(e.g. `install -d -m 0700 /var/lib/sam/receipts`) for the approved
+`retention_window`. Credentials exist only in the protected environment source
+and MUST NOT appear in evidence.
 
-Backups are per-store and network-scoped; a domain backup never traverses the
-identity path and never contains identity records.
+## 7. Local preparation vs runtime approval boundary
 
-```bash
-# Backup each store independently.
-ops/backup --apply --store identity
-ops/backup --apply --store domain
-```
+- **Local preparation (Phases 1–3)** is run locally, credential-free, and
+  produces the plan schema, the validator, the private topology, the greenfield
+  shell gates, and disposable-Compose evidence. It performs no VPS access, no
+  schema initialization, and no traffic change.
+- **Runtime approval (Phase 4)** is a named-human gate on the VPS. It is the
+  only place where the protected environment source is consumed, empty schemas
+  are initialized, artifacts are deployed, and traffic is enabled — and only
+  after the preflight, initialization, and activation go/no-go decisions pass.
 
-Restore is approval-gated and never runs automatically. When an approved
-restore drill is required:
+## 8. Failure containment
 
-```bash
-ops/restore --dry-run --store domain --receipt-dir /var/lib/sam/receipts
-ops/restore --apply --store domain
-```
+On any failed prerequisite, initialization, activation, health, or smoke check:
+disable public traffic, fence writers, preserve logs/diagnostics and redacted
+receipts for the retention window, and remove only the failed activation per the
+approved cleanup procedure. Re-enable traffic only after a fresh approval.
+There is no legacy store to restore and no cutover/rollback fallback.
 
-Record the restore target, the dump file identity, and the redacted receipt as
-evidence. A domain restore must contain domain data only and use no identity
-backup credential.
+## 9. Out of scope for greenfield (source-driven migration tooling)
 
-## 6. Receipts and evidence
-
-Every operation emits a redacted JSON receipt to stdout and, with
-`--receipt-dir`, writes `receipt.json`. Retain receipts in the owner-only
-directory. Receipts contain only:
-
-- `action`, `dry_run`, `plan_checksum`, `counts`, `blocked`
-- opaque IDs, counts, and status — never email, password, token, URL, or role.
-
-## 7. Cutover and rollback controls (`ops/cutover`, `ops/rollback`)
-
-The cutover and rollback controls are credential-free, dry-run-first, and
-approval-gated. They delegate to the backend adapter through the
-`store-operation` Compose service and never accept or emit a database
-credential.
-
-```bash
-# Plan only — performs no write and never invokes the backend.
-ops/cutover --dry-run --store identity --receipt-dir /var/lib/sam/receipts
-ops/rollback --dry-run --store identity --receipt-dir /var/lib/sam/receipts
-```
-
-`--apply` runs the decision and exits non-zero when it is blocked:
-
-- Cutover is blocked unless reconciliation is clean and the maintenance window
-  is bounded (`authority: isolated`, `bounded: true`,
-  `new_store_writes_enabled: true` only when it proceeds).
-- Rollback is blocked when reconciliation is unresolved or the legacy copy is
-  missing. It always routes to `authority: legacy`, disables new-store writes
-  (`new_store_writes_enabled: false`), preserves the legacy copy
-  (`legacy_copy_preserved: true`), and is never destructive
-  (`destructive: false`).
-
-Execution of `--apply` is approval-gated and runs only inside a declared,
-bounded maintenance window after a clean `ops/reconcile --apply` and a passing
-restore drill. It is not part of the daily operations here; see
-`cutover-rollback-rehearsal.md` for the rehearsal procedure and the exact
-execution prerequisites.
+Because this first release has no source environment, the migration tooling
+(`ops/load`, `ops/backfill`, `ops/reconcile`, `ops/cutover`, `ops/rollback`,
+`ops/backup`, `ops/restore` and the backend migration adapters) is NOT invoked
+here. It remains available only as later work if a source environment is
+introduced; a greenfield deployment never imports, backfills, reconciles,
+routes, or rolls back legacy data.
 
 ## Residual threats
 

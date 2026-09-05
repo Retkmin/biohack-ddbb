@@ -16,8 +16,11 @@
 # reach the backend adapter only through the protected VPS environment source
 # consumed by Docker Compose, never through a wrapper argument.
 
-# Allowlisted executable operations. Docs/README/MDX never appear here.
-CONTRACT_ALLOWED_ACTIONS="load backfill reconcile backup restore cutover rollback"
+# Allowlisted executable operations. Docs/README/MDX never appear here. The
+# ``preflight``/``verify-empty`` actions are the fail-closed greenfield VPS
+# deployment gates; the remaining actions are the separate, source-driven
+# migration tooling that a greenfield release never invokes.
+CONTRACT_ALLOWED_ACTIONS="load backfill reconcile backup restore cutover rollback preflight verify-empty initialize activate"
 
 # ── Allowlisting ───────────────────────────────────────────────────────────
 
@@ -29,9 +32,10 @@ contract_is_allowed_action() {
 }
 
 contract_is_executable_action_path() {
-    # Reject documentation-like paths regardless of a misleading name.
-    case "$1" in
-        *.md|*.mdx|*.txt|*.markdown|*.rst|*README*|*readme*|*DOC*|*doc*) return 1 ;;
+    # Reject documentation-like paths regardless of a misleading name or case.
+    lower=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    case "$lower" in
+        *.md|*.mdx|*.txt|*.markdown|*.rst|*readme*|*doc*) return 1 ;;
         *) return 0 ;;
     esac
 }
@@ -103,7 +107,7 @@ contract_emit_receipt() {
 
 contract_service_for() {
     case "$1" in
-        load|backfill|reconcile|cutover|rollback) printf 'store-operation' ;;
+        load|backfill|reconcile|cutover|rollback|preflight|verify-empty|initialize|activate) printf 'store-operation' ;;
         backup) printf 'backup-%s' "$2" ;;
         restore) printf 'restore-%s' "$2" ;;
     esac
@@ -194,6 +198,20 @@ contract_main() {
     # wrapper passes a non-secret action + store.
     service=$(contract_service_for "$action" "$store")
     profile=$(contract_profile_for "$action")
+
+    # Lifecycle operations (preflight/verify-empty/initialize/activate) are
+    # additionally gated on the release digest/manifest binding before any
+    # store-operation run, so a missing or malformed digest (or an incomplete
+    # release manifest) fails closed before Compose is invoked.
+    case "$action" in
+        preflight|verify-empty|initialize|activate)
+            if ! contract_apply_gates_ok; then
+                contract_emit_blocked_receipt "$action" "release digests not validated"
+                return 1
+            fi
+            ;;
+    esac
+
     result=$("$compose_bin" compose \
         --env-file "$env_file" \
         -f "$compose_file" \
@@ -212,5 +230,182 @@ contract_main() {
     fi
 
     contract_emit_receipt "$result" "$receipt_dir"
+    return 0
+}
+
+# ── Greenfield deployment gates: plan, attestations, empty stores ──────────
+#
+# These primitives implement the fail-closed greenfield deployment protocol
+# (preflight -> empty stores -> initialize -> activate). They are
+# credential-free: they hash, atomically publish state, and validate
+# prerequisite attestations without ever accepting or emitting a URL, user,
+# password, token, or secret. Activation never proceeds on a partial
+# prerequisite set — every gate must be attested for the exact plan checksum
+# and both scoped stores must be empty.
+
+contract_plan_file_checksum() {
+    # Immutable SHA-256 identity of the deployment plan file.
+    file=$1
+    sha256sum "$file" | cut -d' ' -f1
+}
+
+contract_atomic_publish() {
+    # Atomically publish content to target: write a sibling temp file, then
+    # rename over the target. A reader never observes a partially written
+    # state file (preflight/active publication).
+    target=$1
+    content=$2
+    dir=$(dirname "$target")
+    tmp="$dir/.state.tmp.$$"
+    printf '%s\n' "$content" > "$tmp" 2>/dev/null || return 1
+    mv "$tmp" "$target" 2>/dev/null || return 1
+    return 0
+}
+
+contract_attestation_ok() {
+    # Require a prerequisite attestation file that is present and positive
+    # (contains `"attested":true`). A missing or negative attestation fails
+    # closed before any activation.
+    attestation_file=$1
+    [ -f "$attestation_file" ] || {
+        echo "missing attestation" >&2
+        return 1
+    }
+    grep -Eq '"attested"[[:space:]]*:[[:space:]]*true' "$attestation_file" 2>/dev/null || {
+        echo "attestation not granted" >&2
+        return 1
+    }
+    return 0
+}
+
+contract_empty_store_ok() {
+    # Require a scoped store directory to be empty (no application data files).
+    # A missing or non-empty store fails closed before initialization; a
+    # greenfield release never imports or backfills legacy data.
+    store_dir=$1
+    [ -d "$store_dir" ] || {
+        echo "missing store" >&2
+        return 1
+    }
+    [ -z "$(find "$store_dir" -mindepth 1 -print -quit 2>/dev/null)" ] || {
+        echo "store not empty" >&2
+        return 1
+    }
+    return 0
+}
+
+contract_all_gates_ok() {
+    # Require every prerequisite gate attestation for the exact plan checksum.
+    # Any missing, negative, or stale attestation returns 1.
+    gates_dir=$1
+    plan_sha=$2
+    for gate in plan protected_config digests dns_tls capacity retention; do
+        attestation_file="$gates_dir/$gate.attestation.json"
+        [ -f "$attestation_file" ] || {
+            echo "missing attestation: $gate" >&2
+            return 1
+        }
+        grep -Eq '"attested"[[:space:]]*:[[:space:]]*true' "$attestation_file" 2>/dev/null || {
+            echo "attestation not granted: $gate" >&2
+            return 1
+        }
+        grep -Eq "\"plan_sha256\"[[:space:]]*:[[:space:]]*\"$plan_sha\"" "$attestation_file" 2>/dev/null || {
+            echo "stale attestation: $gate" >&2
+            return 1
+        }
+    done
+    return 0
+}
+
+contract_emit_blocked_receipt() {
+    # Emit a redacted blocked receipt for a greenfield deployment gate.
+    action=$1
+    reason=$2
+    printf '{"action":"%s","dry_run":false,"plan_checksum":"","counts":null,"blocked":true,"failure_code":"blocked","failure_reason":"%s"}\n' \
+        "$action" "$reason"
+    return 1
+}
+
+contract_image_digest_ok() {
+    # Require a well-formed SHA-256 image digest (exactly 64 lowercase hex
+    # characters). The production Compose resolves application artifacts by
+    # immutable ``@sha256:<digest>`` references; a missing, empty, uppercase, or
+    # non-hex digest fails closed before activation.
+    digest=$1
+    case "$digest" in
+        *[!0-9a-f]*)
+            echo "malformed image digest" >&2
+            return 1
+            ;;
+    esac
+    if [ "${#digest}" -ne 64 ]; then
+        echo "malformed image digest" >&2
+        return 1
+    fi
+    return 0
+}
+
+contract_release_digests_ok() {
+    # Require both approved release digests (backend/frontend) to be present and
+    # well-formed. This is the fail-closed digest gate the digest-pinned Compose
+    # image references depend on; activation never proceeds on a partial or
+    # malformed set.
+    backend_digest=$1
+    frontend_digest=$2
+    contract_image_digest_ok "$backend_digest" || return 1
+    contract_image_digest_ok "$frontend_digest" || return 1
+    return 0
+}
+
+contract_release_manifest_ok() {
+    # Require a complete immutable release manifest: ``SHA256SUMS`` must cover
+    # every artifact the release claims (plan.json, compose.yml,
+    # control-manifest.schema.json, README.md) AND every entry must verify
+    # against the actual file content (``sha256sum -c``). This binds each
+    # artifact's digest to its canonical content, so a well-formed-but-wrong
+    # digest or a manifest that omits a claimed artifact fails closed.
+    release_dir=$1
+    [ -n "$release_dir" ] && [ -d "$release_dir" ] || {
+        echo "missing release dir" >&2
+        return 1
+    }
+    [ -f "$release_dir/SHA256SUMS" ] || {
+        echo "missing SHA256SUMS" >&2
+        return 1
+    }
+    for artifact in plan.json compose.yml control-manifest.schema.json README.md; do
+        [ -f "$release_dir/$artifact" ] || {
+            echo "missing artifact: $artifact" >&2
+            return 1
+        }
+        grep -q "  $artifact\$" "$release_dir/SHA256SUMS" || {
+            echo "missing checksum entry: $artifact" >&2
+            return 1
+        }
+    done
+    ( cd "$release_dir" && sha256sum -c SHA256SUMS >/dev/null 2>&1 ) || {
+        echo "checksum mismatch" >&2
+        return 1
+    }
+    return 0
+}
+
+contract_apply_gates_ok() {
+    # Fail-closed gate for apply-mode lifecycle operations (preflight,
+    # verify-empty, initialize, activate): the approved backend/frontend release
+    # digests must be present and well-formed, and — when ``DDBB_RELEASE_DIR`` is
+    # set — the release manifest must be complete and checksum-verified. This is
+    # the digest/manifest binding invoked by the dispatch before any
+    # store-operation run; it reads only non-secret digest/release values.
+    backend_digest=${BACKEND_IMAGE_DIGEST:-}
+    frontend_digest=${FRONTEND_IMAGE_DIGEST:-}
+    contract_release_digests_ok "$backend_digest" "$frontend_digest" || {
+        echo "release digests not validated" >&2
+        return 1
+    }
+    release_dir=${DDBB_RELEASE_DIR:-}
+    if [ -n "$release_dir" ]; then
+        contract_release_manifest_ok "$release_dir" || return 1
+    fi
     return 0
 }

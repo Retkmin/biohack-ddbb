@@ -1,0 +1,7 @@
+# Local-only disposable credentials. Do not copy production credentials here.
+IDENTITY_POSTGRES_USER=biohack_identity_dev
+IDENTITY_POSTGRES_PASSWORD=biohack_identity_dev_password
+IDENTITY_POSTGRES_DB=biohack_identity_dev
+DOMAIN_POSTGRES_USER=biohack_domain_dev
+DOMAIN_POSTGRES_PASSWORD=biohack_domain_dev_password
+DOMAIN_POSTGRES_DB=biohack_domain_dev

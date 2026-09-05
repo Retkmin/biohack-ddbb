@@ -1,18 +1,3 @@
-# SAM Production Compose — greenfield VPS deployment topology.
-#
-# Immutable release artifacts: the application and frontend services resolve
-# ONLY digest-pinned image references of the form
-# ``<repository>@sha256:<digest>``. The repository and digest variables are
-# required (``:?required``) so an unset or empty value makes Compose fail
-# closed; a malformed digest is rejected by the ``contract_release_digests_ok``
-# gate in ``ops/lib/operation-contract.sh`` before any activation. No service
-# builds from source and no mutable tag is accepted.
-#
-# Scoped stores: identity and domain PostgreSQL services are separate
-# authorities with distinct volumes, principals, and private networks. There is
-# no legacy combined ``postgres`` store; core services route only to the two
-# scoped stores.
-
 name: sam-production
 
 services:
@@ -31,7 +16,6 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
-
   domain-postgres:
     image: postgres:15.12-alpine
     profiles: [production, operations]
@@ -47,7 +31,6 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
-
   redis:
     image: redis:7.4.2-alpine
     profiles: [production, operations]
@@ -59,10 +42,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
-
   api:
     image: "${BACKEND_IMAGE_REPOSITORY:?required}@sha256:${BACKEND_IMAGE_DIGEST:?required}"
     profiles: [production]
+    user: "1001:1001"
     environment: &app-environment
       ENVIRONMENT: ${ENVIRONMENT:?required}
       IDENTITY_DATABASE_URL: ${IDENTITY_DATABASE_URL:?required}
@@ -80,6 +63,15 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:?required}
       CLAUDE_API_KEY: ${CLAUDE_API_KEY:?required}
       AI_INTAKE_ENABLED: ${AI_INTAKE_ENABLED:?required}
+    # Read-only JWT secret provenance mount. Production startup security
+    # requires the canonical base64url JWT secret (and its receipt/history) to
+    # be mounted OUTSIDE the repository as a regular 0600 file; the api reads
+    # it at JWT_SECRET_FILE under /run/sam-jwt.
+    volumes: &jwt-provenance-mount
+      - type: bind
+        source: ${JWT_PROVENANCE_DIR:?required}
+        target: /run/sam-jwt
+        read_only: true
     networks: [internal, identity, domain]
     depends_on:
       identity-postgres: {condition: service_healthy}
@@ -91,29 +83,33 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
-
   worker:
     image: "${BACKEND_IMAGE_REPOSITORY:?required}@sha256:${BACKEND_IMAGE_DIGEST:?required}"
     profiles: [production]
+    user: "1001:1001"
     command: ["celery", "-A", "app.infrastructure.celery_worker:celery_app", "worker", "--loglevel=INFO"]
     environment: *app-environment
+    volumes: *jwt-provenance-mount
     networks: [internal, identity, domain]
     depends_on:
       identity-postgres: {condition: service_healthy}
       domain-postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
-
   beat:
     image: "${BACKEND_IMAGE_REPOSITORY:?required}@sha256:${BACKEND_IMAGE_DIGEST:?required}"
     profiles: [production]
+    # beat does not read the JWT provenance secret and must write its
+    # PersistentScheduler `celerybeat-schedule` to the image-owned /app, so it
+    # runs as the image default (appuser, uid 1000) rather than the VPS owner
+    # uid 1001 that owns the 0600 jwt.secret.
     command: ["celery", "-A", "app.infrastructure.celery_worker:celery_app", "beat", "--loglevel=INFO"]
     environment: *app-environment
+    volumes: *jwt-provenance-mount
     networks: [internal, identity, domain]
     depends_on:
       identity-postgres: {condition: service_healthy}
       domain-postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
-
   caddy:
     image: "${FRONTEND_IMAGE_REPOSITORY:?required}@sha256:${FRONTEND_IMAGE_DIGEST:?required}"
     profiles: [production]
@@ -122,10 +118,6 @@ services:
     networks: [public, internal]
     depends_on:
       api: {condition: service_healthy}
-
-  # Greenfield empty-schema initialization: run both independent, forward-only
-  # Alembic histories against their scoped stores (identity -> users/sessions,
-  # domain -> account_profiles). No combined-store migration exists.
   migration:
     image: "${BACKEND_IMAGE_REPOSITORY:?required}@sha256:${BACKEND_IMAGE_DIGEST:?required}"
     profiles: [operations]
@@ -138,40 +130,22 @@ services:
     depends_on:
       identity-postgres: {condition: service_healthy}
       domain-postgres: {condition: service_healthy}
-
-  # Credential-free store operation adapter. The biohack-ddbb ``ops/*``
-  # wrappers invoke this service with a non-secret action + store; the database
-  # credentials below come only from the protected VPS environment source. The
-  # ``preflight``/``verify-empty`` actions run the fail-closed greenfield
-  # deployment gates: validate the immutable plan and check that both scoped
-  # stores are empty before any initialization.
   store-operation:
     image: "${BACKEND_IMAGE_REPOSITORY:?required}@sha256:${BACKEND_IMAGE_DIGEST:?required}"
     profiles: [operations]
-    # Run as the VPS owner uid:gid (1001:1001): the deployment plan and receipt
-    # bind mounts are owner-only (0700/0600) on the VPS owner account, and the
-    # sealed image's non-root ``appuser`` is uid 1000. Pinning the numeric owner
-    # uid keeps the 0700 owner-only boundary intact while letting preflight read
-    # the immutable plan without a credential.
     user: "1001:1001"
     entrypoint: ["python", "-m", "app.infrastructure.migration.operation"]
     environment:
       IDENTITY_DATABASE_URL: ${IDENTITY_DATABASE_URL:?required}
       DOMAIN_DATABASE_URL: ${DOMAIN_DATABASE_URL:?required}
-      DEPLOYMENT_PLAN_PATH: ${DEPLOYMENT_PLAN_PATH:-/var/lib/sam/plan/plan.json}
+      DEPLOYMENT_PLAN_PATH: ${DEPLOYMENT_PLAN_PATH:-/run/sam-plan/plan.json}
       OPERATION_RECEIPT_PATH: ${OPERATION_RECEIPT_PATH:-/var/lib/sam/receipts/preflight.json}
       HEALTH_EVIDENCE_PATH: ${HEALTH_EVIDENCE_PATH:-/var/lib/sam/receipts/health.attestation.json}
     volumes:
-      # The approved deployment plan is immutable and read-only; prior redacted
-      # receipts are read-only inputs to fail-closed plan validation.
       - type: bind
-        source: ${DEPLOYMENT_PLAN_DIR:-/var/lib/sam/plan}
-        target: /var/lib/sam/plan
+        source: ./plan.json
+        target: /run/sam-plan/plan.json
         read_only: true
-      # The receipts directory is writable so a successful preflight can
-      # atomically persist its non-empty, redacted receipt. The owner-only
-      # (0700) host directory still gates write access; the container runs as
-      # the VPS owner uid:gid (1001:1001).
       - type: bind
         source: ${OPERATION_RECEIPTS_DIR:-/var/lib/sam/receipts}
         target: /var/lib/sam/receipts
@@ -179,20 +153,6 @@ services:
     depends_on:
       identity-postgres: {condition: service_healthy}
       domain-postgres: {condition: service_healthy}
-
-  # Controlled application-owned onboarding. The fixed command is deliberately
-  # separate from store-operation: DDBB supplies only the isolated runtime.
-  tester-provision:
-    image: "${BACKEND_IMAGE_REPOSITORY:?required}@sha256:${BACKEND_IMAGE_DIGEST:?required}"
-    profiles: [operations]
-    entrypoint: ["python", "-m", "app.ops.provision_testers"]
-    command: ["--production", "--target-count", "50"]
-    environment: *app-environment
-    networks: [identity, domain]
-    depends_on:
-      identity-postgres: {condition: service_healthy}
-      domain-postgres: {condition: service_healthy}
-
   backup-identity:
     image: postgres:15.12-alpine
     profiles: [backup]
@@ -201,9 +161,7 @@ services:
     command: ["pg_dump", "-h", "identity-postgres", "-U", "${IDENTITY_POSTGRES_USER:?required}", "-d", "${IDENTITY_POSTGRES_DB:?required}", "-f", "/backups/identity.dump"]
     volumes: [identity_backups:/backups]
     networks: [identity]
-    depends_on:
-      identity-postgres: {condition: service_healthy}
-
+    depends_on: {identity-postgres: {condition: service_healthy}}
   backup-domain:
     image: postgres:15.12-alpine
     profiles: [backup]
@@ -212,9 +170,7 @@ services:
     command: ["pg_dump", "-h", "domain-postgres", "-U", "${DOMAIN_POSTGRES_USER:?required}", "-d", "${DOMAIN_POSTGRES_DB:?required}", "-f", "/backups/domain.dump"]
     volumes: [domain_backups:/backups]
     networks: [domain]
-    depends_on:
-      domain-postgres: {condition: service_healthy}
-
+    depends_on: {domain-postgres: {condition: service_healthy}}
   restore-identity:
     image: postgres:15.12-alpine
     profiles: [backup]
@@ -223,9 +179,7 @@ services:
     command: ["pg_restore", "-h", "identity-postgres", "-U", "${IDENTITY_POSTGRES_USER:?required}", "-d", "${IDENTITY_POSTGRES_DB:?required}", "--clean", "--if-exists", "/backups/identity.dump"]
     volumes: [identity_backups:/backups]
     networks: [identity]
-    depends_on:
-      identity-postgres: {condition: service_healthy}
-
+    depends_on: {identity-postgres: {condition: service_healthy}}
   restore-domain:
     image: postgres:15.12-alpine
     profiles: [backup]
@@ -234,8 +188,7 @@ services:
     command: ["pg_restore", "-h", "domain-postgres", "-U", "${DOMAIN_POSTGRES_USER:?required}", "-d", "${DOMAIN_POSTGRES_DB:?required}", "--clean", "--if-exists", "/backups/domain.dump"]
     volumes: [domain_backups:/backups]
     networks: [domain]
-    depends_on:
-      domain-postgres: {condition: service_healthy}
+    depends_on: {domain-postgres: {condition: service_healthy}}
 
 networks:
   public:

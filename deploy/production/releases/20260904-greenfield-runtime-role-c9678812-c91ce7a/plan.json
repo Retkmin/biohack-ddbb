@@ -1,0 +1,46 @@
+{
+  "plan_sha256": "209d601be0be6463943e49234fbc981c1525217a1b62db524e474d670499f363",
+  "approvals": {
+    "activation": {
+      "approval_id": "owner-request-4725cee4-3b0b-4321-a043-01245745463a",
+      "approved": true,
+      "approver": "biohack-owner",
+      "expires_at": "2026-09-05T06:32:11.709405+00:00",
+      "issued_at": "2026-09-04T06:32:11.709405+00:00"
+    },
+    "initialization": {
+      "approval_id": "owner-request-93a89e2b-cc03-428a-b041-d72e86cacadc",
+      "approved": true,
+      "approver": "biohack-owner",
+      "expires_at": "2026-09-05T06:32:11.709405+00:00",
+      "issued_at": "2026-09-04T06:32:11.709405+00:00"
+    },
+    "preflight": {
+      "approval_id": "owner-request-b4f7d596-eb0e-43fb-acc1-0af617c3348e",
+      "approved": true,
+      "approver": "biohack-owner",
+      "expires_at": "2026-09-05T06:32:11.709405+00:00",
+      "issued_at": "2026-09-04T06:32:11.709405+00:00"
+    }
+  },
+  "backend_digest": "c967881209071574b2e3dc12f4cd6394b35bc58e54c60289826e61a198d0b156",
+  "capacity_limits": {
+    "attested": true
+  },
+  "dns_names": [
+    "sam-planner.com",
+    "api.sam-planner.com"
+  ],
+  "environment": "vps-greenfield",
+  "frontend_digest": "c91ce7a0a2305cdaf2d1294b4af0b7c532ecaff6f196c2c3cb457c217d560855",
+  "protected_config_attestation": "owner-only-config-0b2fac17-ff3b-4058-b2ef-ede5c9ffca9e",
+  "receipt_ids": [
+    "activation-request-33d896eb-7ba1-4afa-b6a7-4e4595f74e7e"
+  ],
+  "residual_risk_recorded": true,
+  "retention_window": 604800,
+  "state": "preflight",
+  "tls_readiness": {
+    "attested": true
+  }
+}

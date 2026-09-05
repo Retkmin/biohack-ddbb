@@ -1,0 +1,67 @@
+# Disposable Compose topology for the fail-closed greenfield deployment gates.
+#
+# Prerequisite gate services write redacted attestations, store-init services
+# initialize ONLY empty scoped stores, and a coordinator activates only after
+# every gate is attested and both stores are initialized. No Postgres, no
+# Redis, no protected environment source, no credentials, no host ports. This
+# is the disposable-stack proof required by task 3.1 (design "Integration"
+# strategy).
+#
+# All images are local-only lightweight images (python:3.11-slim provides the
+# bash/sha256sum/grep/date/find coreutils the operation-contract primitives
+# need).
+
+services:
+  gate:
+    image: python:3.11-slim
+    entrypoint: ["/bin/bash", "/usr/local/share/greenfield/gate.sh"]
+    environment:
+      GATE: ${GATE:-plan}
+      PLAN_SHA256: ${PLAN_SHA256:-}
+    volumes:
+      - shared:/shared:rw
+      - ./gate.sh:/usr/local/share/greenfield/gate.sh:ro
+      - ../../ops/lib/operation-contract.sh:/usr/local/share/greenfield/operation-contract.sh:ro
+
+  store-init:
+    image: python:3.11-slim
+    entrypoint: ["/bin/bash", "/usr/local/share/greenfield/store-init.sh"]
+    environment:
+      STORE_NAME: ${STORE_NAME:-identity}
+      STORE_DIR: ${STORE_DIR:-/shared/stores/identity}
+    volumes:
+      - shared:/shared:rw
+      - ./store-init.sh:/usr/local/share/greenfield/store-init.sh:ro
+      - ../../ops/lib/operation-contract.sh:/usr/local/share/greenfield/operation-contract.sh:ro
+
+  coordinator:
+    image: python:3.11-slim
+    entrypoint: ["/bin/bash", "/usr/local/share/greenfield/coordinator.sh"]
+    environment:
+      PLAN_SHA256: ${PLAN_SHA256:-}
+      TIMEOUT: ${TIMEOUT:-6}
+    volumes:
+      - shared:/shared:rw
+      - ./coordinator.sh:/usr/local/share/greenfield/coordinator.sh:ro
+      - ../../ops/lib/operation-contract.sh:/usr/local/share/greenfield/operation-contract.sh:ro
+
+  seed:
+    image: python:3.11-slim
+    entrypoint: ["/bin/bash", "-c", "mkdir -p ${SEED_DIR:-/shared/stores/domain}; printf 'legacy-data' > ${SEED_DIR:-/shared/stores/domain}/row.dat; echo seeded"]
+    volumes:
+      - shared:/shared:rw
+
+  reader:
+    image: python:3.11-slim
+    entrypoint: ["/bin/bash", "-c", "cat /shared/state.json 2>/dev/null || true"]
+    volumes:
+      - shared:/shared:rw
+
+  reset:
+    image: python:3.11-slim
+    entrypoint: ["/bin/bash", "-c", "find ${RESET_DIR:-/shared} -mindepth 1 -delete 2>/dev/null; echo reset-ok"]
+    volumes:
+      - shared:/shared:rw
+
+volumes:
+  shared:

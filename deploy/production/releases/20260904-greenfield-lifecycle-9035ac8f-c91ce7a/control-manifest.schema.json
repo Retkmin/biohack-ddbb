@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://biohack.local/schemas/control-manifest.schema.json",
+  "title": "Greenfield Deployment Plan (VPS)",
+  "description": "Immutable configuration authority for the first greenfield VPS deployment. The approved, checksummed plan gates preflight, empty-schema initialization, and public activation; every field is opaque and credential-free.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "plan_sha256",
+    "environment",
+    "backend_digest",
+    "frontend_digest",
+    "dns_names",
+    "approvals",
+    "protected_config_attestation",
+    "tls_readiness",
+    "capacity_limits",
+    "retention_window",
+    "state",
+    "receipt_ids",
+    "residual_risk_recorded"
+  ],
+  "properties": {
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Immutable SHA-256 identity of the deployment plan; must match the approved plan checksum."
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["vps-greenfield"],
+      "description": "Deployment environment. Only the first greenfield VPS release is authorized."
+    },
+    "backend_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Versioned, immutable backend image digest approved for deployment."
+    },
+    "frontend_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Versioned, immutable frontend image digest approved for deployment."
+    },
+    "dns_names": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Approved public DNS names served by Caddy over HTTPS."
+    },
+    "approvals": {
+      "type": "object",
+      "description": "Named human go/no-go approvals required before each runtime write.",
+      "additionalProperties": false,
+      "required": ["preflight", "initialization", "activation"],
+      "properties": {
+        "preflight": { "$ref": "#/$defs/approval" },
+        "initialization": { "$ref": "#/$defs/approval" },
+        "activation": { "$ref": "#/$defs/approval" }
+      }
+    },
+    "protected_config_attestation": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Opaque attestation identifier that the owner-only protected environment source is present. Never a credential."
+    },
+    "tls_readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attested"],
+      "properties": {
+        "attested": { "type": "boolean", "description": "True only when TLS material and DNS/domain control are attested." }
+      }
+    },
+    "capacity_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attested"],
+      "properties": {
+        "attested": { "type": "boolean", "description": "True only when capacity limits are attested." }
+      }
+    },
+    "retention_window": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Diagnostic-retention window in seconds for redacted receipts and logs."
+    },
+    "state": {
+      "type": "string",
+      "enum": ["preflight", "initialized", "healthy", "active", "blocked"],
+      "description": "Publication state of this plan. Traffic is enabled only in 'active'."
+    },
+    "receipt_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Opaque identifiers of the retained redacted receipts this plan depends on."
+    },
+    "residual_risk_recorded": {
+      "type": "boolean",
+      "description": "True only when the same-host administrative residual risk is recorded."
+    }
+  },
+  "$defs": {
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approved", "approver", "approval_id", "issued_at", "expires_at"],
+      "properties": {
+        "approved": { "type": "boolean" },
+        "approver": { "type": "string", "minLength": 1, "description": "Opaque approver identity (role/principal, never a credential)." },
+        "approval_id": { "type": "string", "minLength": 1 },
+        "issued_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

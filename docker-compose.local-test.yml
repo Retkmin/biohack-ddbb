@@ -1,0 +1,12 @@
+services:
+  identity-postgres:
+    ports:
+      - target: 5432
+        published: "0"
+        host_ip: 127.0.0.1
+
+  domain-postgres:
+    ports:
+      - target: 5432
+        published: "0"
+        host_ip: 127.0.0.1

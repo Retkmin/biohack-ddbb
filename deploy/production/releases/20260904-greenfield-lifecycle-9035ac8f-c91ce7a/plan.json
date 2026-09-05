@@ -1,0 +1,37 @@
+{
+  "plan_sha256": "6676cf1edb8c6de792ecff330b54ed074b5a62722b44e195dbb01bb28f52120a",
+  "environment": "vps-greenfield",
+  "backend_digest": "9035ac8f99187215e867aaee3e5718da29a6d207706252f857d7779ce1e61273",
+  "frontend_digest": "c91ce7a0a2305cdaf2d1294b4af0b7c532ecaff6f196c2c3cb457c217d560855",
+  "dns_names": ["biohack.example.com"],
+  "approvals": {
+    "preflight": {
+      "approved": true,
+      "approver": "deployment-operator",
+      "approval_id": "aprv-1",
+      "issued_at": "2026-09-04T08:00:00+00:00",
+      "expires_at": "2026-09-04T18:00:00+00:00"
+    },
+    "initialization": {
+      "approved": true,
+      "approver": "deployment-operator",
+      "approval_id": "aprv-2",
+      "issued_at": "2026-09-04T08:00:00+00:00",
+      "expires_at": "2026-09-04T18:00:00+00:00"
+    },
+    "activation": {
+      "approved": true,
+      "approver": "deployment-operator",
+      "approval_id": "aprv-3",
+      "issued_at": "2026-09-04T08:00:00+00:00",
+      "expires_at": "2026-09-04T18:00:00+00:00"
+    }
+  },
+  "protected_config_attestation": "attest-config-opaque-1",
+  "tls_readiness": { "attested": true },
+  "capacity_limits": { "attested": true },
+  "retention_window": 604800,
+  "state": "preflight",
+  "receipt_ids": ["receipt-opaque-1"],
+  "residual_risk_recorded": true
+}

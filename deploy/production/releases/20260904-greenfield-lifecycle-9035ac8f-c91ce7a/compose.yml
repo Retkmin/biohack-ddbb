@@ -180,19 +180,6 @@ services:
       identity-postgres: {condition: service_healthy}
       domain-postgres: {condition: service_healthy}
 
-  # Controlled application-owned onboarding. The fixed command is deliberately
-  # separate from store-operation: DDBB supplies only the isolated runtime.
-  tester-provision:
-    image: "${BACKEND_IMAGE_REPOSITORY:?required}@sha256:${BACKEND_IMAGE_DIGEST:?required}"
-    profiles: [operations]
-    entrypoint: ["python", "-m", "app.ops.provision_testers"]
-    command: ["--production", "--target-count", "50"]
-    environment: *app-environment
-    networks: [identity, domain]
-    depends_on:
-      identity-postgres: {condition: service_healthy}
-      domain-postgres: {condition: service_healthy}
-
   backup-identity:
     image: postgres:15.12-alpine
     profiles: [backup]
